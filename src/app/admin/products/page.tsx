@@ -1,63 +1,130 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import db from '@/db/db';
+import { PageHeader } from '../_components/PageHeader';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { CheckCircle2, MoreVertical, XCircle } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/formatters';
-import { PageHeader } from '../_components/pageHeader';
-
-async function getSalesData() {
-  const data = await db.order.aggregate({
-    _sum: { priceInCents: true },
-    _count: true,
-  });
-
-  return {
-    amount: (data._sum.priceInCents || 0) / 100,
-    numberOfSales: data._count,
-  };
-}
-
-async function getUserData() {
-  const [userCount, orderData] = await Promise.all([
-    db.user.count(),
-    db.order.aggregate({
-      _sum: { priceInCents: true },
-    }),
-  ]);
-
-  return {
-    userCount,
-    averageValuePerUser:
-      (orderData._sum.priceInCents ?? 0) / (!userCount ? 1 : userCount) / 100,
-  };
-}
-
-async function getProductData() {
-  const [activeCount, inactiveCount] = await Promise.all([
-    db.product.count({
-      where: { isAvailableForPurchase: true },
-    }),
-    db.product.count({
-      where: { isAvailableForPurchase: false },
-    }),
-  ]);
-
-  return {
-    activeCount,
-    inactiveCount,
-  };
-}
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  ActiveToggleDropdownItem,
+  DeleteDropdownItem,
+} from './_components/ProductActions';
 
 export default async function AdminProductsPage() {
   return (
     <>
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4">
         <PageHeader>Products</PageHeader>
+        <Button asChild>
+          <Link href="products/new">Add Product</Link>
+        </Button>
       </div>
+      <ProductsTable />
+    </>
+  );
+}
+
+async function ProductsTable() {
+  const products = await db.product.findMany({
+    select: {
+      id: true,
+      name: true,
+      priceInCents: true,
+      isAvailableForPurchase: true,
+      _count: { select: { orders: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  if (!products.length) return <p>No Products Found</p>;
+
+  return (
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-0">
+              <span className="sr-only">Available For Purchase</span>
+            </TableHead>
+            <TableHead>Price</TableHead>
+            <TableHead>Orders</TableHead>
+            <TableHead>Orders</TableHead>
+            <TableHead className="w-0">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {products.map((product) => (
+            <TableRow key={product.id}>
+              <TableCell>
+                {product.isAvailableForPurchase ? (
+                  <>
+                    <CheckCircle2 />
+                    <span className="sr-only">Available</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="stroke-destructive" />
+                    <span className="sr-only">Unavailable</span>
+                  </>
+                )}
+              </TableCell>
+              <TableCell>{product.name}</TableCell>
+              <TableCell>
+                {formatCurrency(product.priceInCents / 100)}
+              </TableCell>
+              <TableCell>{formatNumber(product._count.orders)}</TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger>
+                    <MoreVertical />
+                    <span className="sr-only">Actions</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem asChild>
+                      <a
+                        download
+                        href={`/admin/products/${product.id}/download`}
+                      >
+                        Download
+                      </a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/admin/products/${product.id}/edit`}>
+                        Edit
+                      </Link>
+                    </DropdownMenuItem>
+                    <ActiveToggleDropdownItem
+                      id={product.id}
+                      isAvailableForPurchase={product.isAvailableForPurchase}
+                    ></ActiveToggleDropdownItem>
+                    <DropdownMenuSeparator />
+                    <DeleteDropdownItem
+                      id={product.id}
+                      disabled={product._count.orders > 0}
+                    ></DeleteDropdownItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </>
   );
 }
